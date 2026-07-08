@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>电子书阅读器</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+<style>
+  :root {
+    --bg:#faf9f6; --text:#333; --sidebar-bg:#f0ede7;
+    --border:#d5cec3; --accent:#8b7355;
+    --arrow-bg:rgba(0,0,0,0.04); --arrow-hover:rgba(0,0,0,0.1);
+    --toolbar-h:42px;
+  }
+  .dark {
+    --bg:#1a1a1a; --text:#d4d4d4; --sidebar-bg:#222;
+    --border:#333; --accent:#c9a96e;
+    --arrow-bg:rgba(255,255,255,0.04); --arrow-hover:rgba(255,255,255,0.1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;overflow:hidden;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);}
+  body{display:flex;}
+
+  /* 侧边栏 */
+  #sidebar{width:280px;min-width:280px;background:var(--sidebar-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:transform 0.25s ease,min-width 0.25s ease,width 0.25s ease;z-index:30;}
+  #sidebar.hidden{transform:translateX(-280px);min-width:0;width:0;overflow:hidden;visibility:hidden;}
+  #sidebar-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+  #sidebar-header h2{font-size:1rem;font-weight:600;}
+  #toc-list{flex:1;overflow-y:auto;padding:8px 0;list-style:none;}
+  #toc-list li a{display:block;padding:10px 20px;font-size:0.88rem;color:var(--text);text-decoration:none;border-left:3px solid transparent;transition:background 0.15s,border-color 0.15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #toc-list li a:hover,#toc-list li a.active{background:var(--arrow-hover);}
+  #toc-list li a.active{border-left-color:var(--accent);font-weight:600;}
+
+  /* 主区域 */
+  #main{flex:1;display:flex;flex-direction:column;position:relative;min-width:0;}
+
+  /* 工具栏 */
+  #toolbar{
+    display:flex;align-items:center;gap:4px;padding:4px 8px;
+    border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;
+    height:var(--toolbar-h);transition:transform 0.3s ease,opacity 0.3s ease;
+    z-index:25;
+  }
+  #toolbar button{
+    background:none;border:1px solid var(--border);color:var(--text);
+    padding:5px 10px;border-radius:4px;cursor:pointer;font-size:0.83rem;
+    transition:background 0.15s;white-space:nowrap;
+  }
+  #toolbar button:hover{background:var(--arrow-hover);}
+  #toolbar button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  #toolbar .sep{width:1px;height:20px;background:var(--border);margin:0 2px;}
+  #font-size-display{font-size:0.83rem;min-width:36px;text-align:center;opacity:0.8;}
+  #page-info{margin-left:auto;font-size:0.83rem;opacity:0.7;white-space:nowrap;}
+
+  /* 阅读容器 */
+  #viewer-wrapper{flex:1;position:relative;overflow:hidden;min-height:0;}
+  #viewer{position:absolute;inset:0;}
+  #viewer iframe{background:var(--bg)!important;overflow:hidden!important;}
+
+  /* 翻页箭头 */
+  .arrow{
+    position:absolute;top:50%;transform:translateY(-50%);
+    width:44px;height:70px;display:flex;align-items:center;justify-content:center;
+    font-size:1.8rem;color:var(--text);opacity:0.3;cursor:pointer;z-index:5;
+    border-radius:6px;background:var(--arrow-bg);
+    transition:opacity 0.2s,background 0.2s;user-select:none;
+  }
+  .arrow:hover{opacity:0.85;background:var(--arrow-hover);}
+  #prev{left:8px;}#next{right:8px;}
+
+  /* 进度条 */
+  #progress-bar{position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--border);z-index:10;transition:opacity 0.3s;}
+  #progress-fill{height:100%;background:var(--accent);width:0%;transition:width 0.3s;}
+
+  /* 覆盖层 */
+  #overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:20;gap:16px;padding:20px;overflow-y:auto;}
+  #overlay .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #welcome{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:600px;width:100%;}
+  #welcome .icon{font-size:4rem;}
+  #welcome h1{font-size:1.3rem;font-weight:600;}
+  #welcome p{font-size:0.9rem;opacity:0.6;text-align:center;line-height:1.7;}
+  #welcome .pick-btn{display:inline-block;padding:14px 40px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:1.1rem;cursor:pointer;transition:opacity 0.2s;box-shadow:0 2px 12px rgba(0,0,0,0.15);}
+  #welcome .pick-btn:active{opacity:0.8;}
+  #welcome .hint{font-size:0.8rem;opacity:0.45;}
+
+  /* 书架 */
+  #bookshelf{width:100%;max-width:560px;max-height:50vh;overflow-y:auto;}
+  #bookshelf h2{font-size:0.95rem;opacity:0.6;margin-bottom:10px;text-align:left;font-weight:500;position:sticky;top:0;background:var(--bg);padding-bottom:8px;}
+  .book-card{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;cursor:pointer;background:var(--arrow-bg);border:1px solid var(--border);margin-bottom:8px;transition:background 0.15s;text-align:left;}
+  .book-card:hover{background:var(--arrow-hover);}
+  .book-card .book-icon{font-size:1.8rem;flex-shrink:0;}
+  .book-card .book-info{flex:1;min-width:0;}
+  .book-card .book-name{font-size:0.93rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .book-card .book-meta{font-size:0.76rem;opacity:0.6;margin-top:2px;}
+  .book-card .book-progress-bar{height:3px;background:var(--border);border-radius:2px;margin-top:6px;}
+  .book-card .book-progress-fill{height:100%;background:var(--accent);border-radius:2px;}
+  .book-card .book-del{flex-shrink:0;width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--text);opacity:0.3;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .book-card .book-del:hover{opacity:0.8;background:rgba(255,0,0,0.1);}
+
+  #loading-msg{font-size:1rem;opacity:0.7;text-align:center;display:none;}
+  #loading-error{color:#c0392b;max-width:450px;text-align:center;font-size:0.88rem;line-height:1.6;display:none;}
+
+  /* 滚动模式下隐藏翻页箭头 */
+  body.flow-scrolled .arrow{display:none;}
+  /* 通过 body.immersive 控制，隐藏所有 chrome */
+  body.immersive #toolbar{position:absolute;top:0;left:0;right:0;z-index:25;transform:translateY(-100%);opacity:0;pointer-events:none;}
+  body.immersive .arrow{opacity:0;pointer-events:none;}
+  body.immersive #progress-bar{opacity:0;}
+  body.immersive #sidebar{transform:translateX(-280px);min-width:0;width:0;}
+  body.immersive #typo-panel{display:none;}
+  /* 沉浸模式提示 Toast */
+  #toast{
+    position:absolute;bottom:40px;left:50%;transform:translateX(-50%);z-index:30;
+    background:rgba(0,0,0,0.75);color:#fff;padding:8px 20px;
+    border-radius:20px;font-size:0.85rem;opacity:0;
+    pointer-events:none;transition:opacity 0.3s;
+    white-space:nowrap;
+  }
+  #toast.show{opacity:1;}
+
+  /* 排版面板 */
+  #typo-panel{
+    position:absolute;top:var(--toolbar-h);left:8px;z-index:35;
+    background:var(--sidebar-bg);border:1px solid var(--border);
+    border-radius:8px;padding:10px 14px;display:none;flex-direction:column;gap:6px;
+    min-width:180px;box-shadow:0 4px 20px rgba(0,0,0,0.15);
+  }
+  #typo-panel.show{display:flex;}
+  .typo-row{
+    display:flex;align-items:center;gap:8px;font-size:0.85rem;
+  }
+  .typo-row span:first-child{width:32px;opacity:0.7;}
+  .typo-row span:nth-child(3){min-width:40px;text-align:center;font-weight:500;}
+  .typo-row button{
+    width:28px;height:28px;border:1px solid var(--border);
+    background:var(--bg);color:var(--text);border-radius:50%;
+    cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;
+    transition:background 0.15s;
+  }
+  .typo-row button:hover{background:var(--arrow-hover);}
+
+
+  /* 响应式 */
+  /* 手机专属沉浸按钮 */
+  #mobile-immersive-btn{
+    display:none;
+  }
+  @media(max-width:700px){
+    #mobile-immersive-btn{
+      display:inline-block;position:fixed;bottom:20px;right:16px;z-index:30;
+      width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;
+      border:none;font-size:1.3rem;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,0.3);
+      opacity:0.7;transition:opacity 0.2s;
+    }
+    #mobile-immersive-btn:active{opacity:1;transform:scale(0.9);}
+    body.immersive #mobile-immersive-btn{opacity:0.85;}
+    #sidebar{position:absolute;left:0;top:0;bottom:0;}
+    #sidebar.hidden{transform:translateX(-100%);}
+    .arrow{width:36px;height:60px;font-size:1.5rem;}
+    #prev{left:4px;}#next{right:4px;}
+    #toolbar{gap:2px;padding:4px 4px;}
+    #toolbar button{padding:4px 7px;font-size:0.77rem;}
+    #welcome .icon{font-size:3rem;}
+    #welcome h1{font-size:1.1rem;}
+    #float-hint{bottom:16px;right:12px;padding:5px 12px;font-size:0.75rem;}
+  }
+</style>
+</head>
+<body>
+
+<aside id="sidebar" class="hidden">
+  <div id="sidebar-header"><h2>📖 目录</h2><button onclick="toggleSidebar()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--text);">✕</button></div>
+  <ul id="toc-list"></ul>
+</aside>
+
+<div id="main">
+  <div id="toolbar">
+    <button onclick="toggleSidebar()">☰ 目录</button>
+    <button onclick="openFile()">📂 打开</button>
+    <button onclick="backToShelf()">📚 书架</button>
+    <span class="sep"></span>
+    <button onclick="toggleTypoPanel()" id="typo-btn" title="排版设置">🔤 排版</button>
+    <span class="sep"></span>
+    <button onclick="toggleTheme()" id="theme-btn">🌙 夜间</button>
+    <span class="sep"></span>
+    <button onclick="toggleFlowMode()" id="flow-btn" title="切换翻页方向">📖 翻页</button>
+    <span id="page-info"></span>
+  </div>
+
+
+  <!-- 排版面板 -->
+  <div id="typo-panel">
+    <div class="typo-row">
+      <span>字号</span>
+      <button onclick="changeFontSize(-2)">−</button>
+      <span id="font-size-display">100%</span>
+      <button onclick="changeFontSize(2)">+</button>
+    </div>
+    <div class="typo-row">
+      <span>行距</span>
+      <button onclick="changeLineSpacing(-1)">−</button>
+      <span id="line-spacing-display">1.8</span>
+      <button onclick="changeLineSpacing(1)">+</button>
+    </div>
+    <div class="typo-row">
+      <span>段距</span>
+      <button onclick="changeParaSpacing(-1)">−</button>
+      <span id="para-spacing-display">1.0</span>
+      <button onclick="changeParaSpacing(1)">+</button>
+    </div>
+  </div>
+
+  <div id="viewer-wrapper">
+    <div id="viewer"></div>
+    <div id="overlay">
+      <div id="welcome">
+        <div class="icon">📖</div>
+        <h1>电子书阅读器</h1>
+        <p>支持 EPUB / TXT · 上下滚动 · 沉浸模式</p>
+        <button class="pick-btn" onclick="openFile()">📂 打开新书</button>
+        <p class="hint">也支持拖拽文件到本页</p>
+        <div id="bookshelf"></div>
+      </div>
+      <div class="spinner" id="loading-spinner" style="display:none;"></div>
+      <div id="loading-msg"></div>
+      <div id="loading-error"></div>
+    </div>
+    <div class="arrow" id="prev" onclick="rendition.prev()">‹</div>
+    <div class="arrow" id="next" onclick="rendition.next()">›</div>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <div id="toast"></div>
+    <button id="mobile-immersive-btn" onclick="toggleImmersive()" title="沉浸模式">📵</button>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".epub,.txt" style="display:none" onchange="handleFile(this.files[0])">
+
+<script>
+(function(){
+  // ---- 全局状态 ----
+  let rendition=null, currentBook=null;
+  let currentTheme='light', currentFontSize=100, currentLineSpacing=1.8, currentParaSpacing=1.0;
+  let currentFlow='paginated';
+  let isImmersive=false;
+  let loaded=false, currentFileName=null, restoreTarget=null, observer=null;
+
+  const $=id=>document.getElementById(id);
+  const STORAGE_KEY='ebook_reader_progress', PREFS_KEY='ebook_reader_prefs';
+
+  // ---- 持久化：进度 ----
+  function loadAllProgress(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');}catch(e){return{};}}
+  function saveProgress(fn,data){
+    try{const a=loadAllProgress();a[fn]=Object.assign(a[fn]||{},data,{updatedAt:Date.now(),type:data.type||(a[fn]&&a[fn].type)});localStorage.setItem(STORAGE_KEY,JSON.stringify(a));}catch(e){}
+  }
+  function getSavedProgress(fn){return(loadAllProgress())[fn]||null;}
+  function removeProgress(fn){const a=loadAllProgress();delete a[fn];try{localStorage.setItem(STORAGE_KEY,JSON.stringify(a));}catch(e){}renderBookshelf();}
+
+  // ---- 持久化：偏好 ----
+  function savePrefs(){
+    try{localStorage.setItem(PREFS_KEY,JSON.stringify({fontSize:currentFontSize,theme:currentTheme,flow:currentFlow,immersive:isImmersive,lineSpacing:currentLineSpacing,paraSpacing:currentParaSpacing}));}catch(e){}
+  }
+  function loadPrefs(){
+    try{
+      const p=JSON.parse(localStorage.getItem(PREFS_KEY));
+      if(p){
+        if(p.fontSize){currentFontSize=p.fontSize;$('font-size-display').textContent=currentFontSize+'%';}
+        if(p.lineSpacing){currentLineSpacing=p.lineSpacing;$('line-spacing-display').textContent=currentLineSpacing;}
+        if(p.paraSpacing){currentParaSpacing=p.paraSpacing;$('para-spacing-display').textContent=currentParaSpacing;}
+        if(p.flow){currentFlow=p.flow;updateFlowUI();}
+        if(p.immersive){isImmersive=p.immersive;if(isImmersive)setTimeout(()=>enterImmersive(),500);}
+        if(p.theme==='dark'){setTimeout(()=>toggleTheme(),100);}
+      }
+    }catch(e){}
+  }
+
+  // ---- 尺寸 ----
+  function getViewerSize(){const r=$('viewer-wrapper').getBoundingClientRect();return{width:Math.floor(r.width),height:Math.floor(r.height)};}
+
+  // ---- 覆盖层 ----
+  function showWelcome(){$('welcome').style.display='flex';$('loading-msg').style.display='none';$('loading-spinner').style.display='none';$('loading-error').style.display='none';$('overlay').style.display='flex';loaded=false;}
+  function showLoading(m){$('welcome').style.display='none';$('loading-error').style.display='none';$('loading-msg').textContent=m;$('loading-msg').style.display='';$('loading-spinner').style.display='';$('overlay').style.display='flex';loaded=false;}
+  function showError(m){$('welcome').style.display='none';$('loading-msg').style.display='none';$('loading-spinner').style.display='none';$('loading-error').textContent=m;$('loading-error').style.display='';$('overlay').style.display='flex';loaded=false;}
+  function hideOverlay(){$('overlay').style.display='none';loaded=true;}
+
+  let loadTimeout;
+  function startTimer(){clearTimeout(loadTimeout);loadTimeout=setTimeout(function(){if(!loaded)showError('加载超时');},30000);}
+  function stopTimer(){clearTimeout(loadTimeout);}
+
+  // ---- 主题 ----
+  function getThemeRules(t){
+    var base=t==='dark'?{
+      body:{background:'#1a1a1a',color:'#d4d4d4','font-family':'serif','line-height':String(currentLineSpacing)},
+      p:{color:'#d4d4d4','margin-bottom':currentParaSpacing+'em'},
+      'div,span,li':{color:'#d4d4d4'},
+      'h1,h2,h3,h4,h5,h6':{color:'#e0d8c8'},
+      a:{color:'#c9a96e'}
+    }:{
+      body:{background:'#faf9f6',color:'#333','font-family':'serif','line-height':String(currentLineSpacing)},
+      p:{color:'#333','margin-bottom':currentParaSpacing+'em'},
+      'div,span,li':{color:'#333'},
+      'h1,h2,h3,h4,h5,h6':{color:'#222'},
+      a:{color:'#8b7355'}
+    };
+    return base;
+  }
+  function applyPrefsToBook(){
+    if(!rendition)return;
+    rendition.themes.fontSize(currentFontSize+'%');
+    _reapplyTheme();
+  }
+  window.toggleTheme=function(){
+    currentTheme=currentTheme==='light'?'dark':'light';
+    document.body.classList.toggle('dark',currentTheme==='dark');
+    const b=$('theme-btn');b.innerHTML=currentTheme==='light'?'🌙 夜间':'☀️ 日间';b.classList.toggle('active',currentTheme==='dark');
+    savePrefs();
+    if(!rendition)return;
+    _reapplyTheme();
+  };
+
+  // ---- 字号 ----
+  window.changeFontSize=function(d){
+    currentFontSize=Math.max(60,Math.min(200,currentFontSize+d));
+    $('font-size-display').textContent=currentFontSize+'%';
+    savePrefs();
+    if(rendition)rendition.themes.fontSize(currentFontSize+'%');
+  };
+  window.changeLineSpacing=function(d){
+    currentLineSpacing=Math.round((Math.max(1.0,Math.min(3.0,currentLineSpacing+d*0.2)))*10)/10;
+    $('line-spacing-display').textContent=currentLineSpacing;
+    savePrefs();
+    _reapplyTheme();
+  };
+  window.changeParaSpacing=function(d){
+    currentParaSpacing=Math.round((Math.max(0,Math.min(3.0,currentParaSpacing+d*0.5)))*10)/10;
+    $('para-spacing-display').textContent=currentParaSpacing;
+    savePrefs();
+    _reapplyTheme();
+  };
+  var _themeVer=0;
+  function _reapplyTheme(){
+    if(!rendition)return;
+    _themeVer++;
+    var t=currentTheme==='dark'?'dark':'light';
+    var name=t+'_'+_themeVer; // 唯一名，强制 epub.js 刷新
+    rendition.themes.register(name,getThemeRules(t));
+    rendition.themes.select(name);
+  }
+
+  // ---- 翻页方向 ----
+  function updateFlowUI(){
+    var s=currentFlow==='scrolled';
+    $('flow-btn').innerHTML=s?'📜 滚动':'📖 翻页';
+    document.body.classList.toggle('flow-scrolled',s);
+  }
+  window.toggleFlowMode=function(){
+    currentFlow=currentFlow==='paginated'?'scrolled':'paginated';
+    updateFlowUI();savePrefs();
+    if(currentFileName){
+      showLoading('切换翻页模式…');
+      var curLoc=null, curPct=null;
+      if(rendition){
+        try{var l=rendition.currentLocation();if(l&&l.start){curLoc=l.start.cfi||l.start.href||null;curPct=l.start.percentage;}}catch(e){}
+        try{rendition.destroy();}catch(e){}
+        rendition=null;
+      }
+      $('viewer').innerHTML='';
+      // cfi + 百分比双保险：cfi 可能只是章节级，百分比可精确恢复
+      _createRenditionAndDisplay(currentFileName,curLoc,curPct);
+    }
+  };
+
+  // ---- 沉浸模式 ----
+  window.toggleImmersive=function(){
+    isImmersive=!isImmersive;
+    if(isImmersive)enterImmersive();else exitImmersive();
+    savePrefs();
+  };
+  function showToast(msg){
+    var t=$('toast');t.textContent=msg;t.classList.add('show');
+    setTimeout(function(){t.classList.remove('show');},2000);
+  }
+  function enterImmersive(){
+    isImmersive=true;
+    document.body.classList.add('immersive');
+    showToast('已进入沉浸模式 · Esc/双击退出');
+  }
+  function exitImmersive(){
+    isImmersive=false;
+    document.body.classList.remove('immersive');
+  }
+
+  // Esc 键切换沉浸模式（防抖：同一按键 300ms 内只触发一次）
+  let _escTimer=0;
+  function _onEsc(){
+    if(!loaded||!rendition)return;
+    var now=Date.now();
+    if(now-_escTimer<300)return;
+    _escTimer=now;
+    toggleImmersive();
+  }
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')_onEsc();},true);
+  window.addEventListener('keydown',function(e){if(e.key==='Escape')_onEsc();},true);
+
+  // 双击切换沉浸模式（注入 iframe 内部 + 父页面双重监听）
+  let _lastTap=0;
+  function _installDTap(doc){
+    try{
+      doc.addEventListener('touchend',function(e){
+        if(!loaded||!rendition)return;
+        if(e.target.closest('a'))return;
+        const now=Date.now();
+        if(now-_lastTap<400){
+          e.preventDefault();
+          toggleImmersive();
+          _lastTap=0;
+        }else{_lastTap=now;}
+      },{passive:false});
+    }catch(e){}
+  }
+  // 父页面兜底
+  document.addEventListener('touchend',function(e){
+    if(!loaded||!rendition)return;
+    if(e.target.closest('button')||e.target.closest('#sidebar')||e.target.closest('#toolbar'))return;
+    const now=Date.now();
+    if(now-_lastTap<400){e.preventDefault();toggleImmersive();_lastTap=0;}else{_lastTap=now;}
+  },{passive:false});
+
+  // ---- 销毁 ----
+  function destroyCurrent(){
+    if(rendition){try{rendition.destroy();}catch(e){}rendition=null;}
+    if(currentBook){try{currentBook.destroy();}catch(e){}currentBook=null;}
+    $('viewer').innerHTML='';$('toc-list').innerHTML='';
+    $('page-info').textContent='';$('progress-fill').style.width='0%';
+    window.rendition=null;currentFileName=null;_tocBuilt=false;
+  }
+
+  // ---- EPUB 渲染核心 ----
+  function _createRenditionAndDisplay(fileName,target,pct){
+    if(typeof ePub==='undefined'){showError('JS 库加载失败');return;}
+    $('viewer').innerHTML='';
+    const size=getViewerSize();
+    rendition=currentBook.renderTo('viewer',{
+      width:size.width,height:size.height,
+      spread:'auto',flow:currentFlow,minSpreadWidth:800,
+    });
+    window.rendition=rendition;
+    // 在 iframe 内注入 Esc + 双击监听
+    rendition.on('keydown',function(e){if(e.key==='Escape'){e.preventDefault();_onEsc();}});
+    // 双击：从 iframe 内取 contentDocument 注入
+    setTimeout(function(){
+      try{
+        var views=rendition.getView().document();
+        if(views)_installDTap(views);
+      }catch(e){/* fallback to parent listener */}
+    },500);
+    // 目录
+    currentBook.loaded.navigation.then(t=>buildToc(t)).catch(()=>{});
+
+    // 进度保存
+    rendition.on('relocated',function(loc){
+      updateProgress(loc);
+      if(loc&&loc.start&&currentFileName){
+        var pct=_calcPct(loc.start);
+        saveProgress(currentFileName,{
+          type:'epub',href:loc.start.href||'',cfi:loc.start.cfi||'',pct:pct
+        });
+      }
+    });
+
+    document.addEventListener('visibilitychange',function(){if(document.hidden)_forceSave();});
+    window.addEventListener('beforeunload',_forceSave);
+
+    showLoading('正在渲染…');
+    var displayPromise;
+    if(target){
+      displayPromise=rendition.display(target);
+    }else{
+      displayPromise=rendition.display();
+    }
+    displayPromise.then(function(){
+      hideOverlay();stopTimer();restoreTarget=null;
+      applyPrefsToBook();
+      updateFlowUI();
+      if(isImmersive)enterImmersive();
+    }).catch(function(e){
+      // 恢复失败则从头开始
+      rendition.display().then(function(){hideOverlay();stopTimer();applyPrefsToBook();if(isImmersive)enterImmersive();});
+    });
+  }
+
+  // ---- EPUB 入口 ----
+  function loadEpub(file){
+    destroyCurrent();currentFileName=file.name;
+    showLoading('正在解析 EPUB…');startTimer();
+    const saved=getSavedProgress(file.name);
+    // 恢复目标：cfi（精确定位）> href（章节定位）
+    restoreTarget=(saved&&saved.cfi)?saved.cfi:((saved&&saved.href)?saved.href:null);
+    var savedPct=(saved&&saved.pct)?saved.pct:null;
+    if(restoreTarget||savedPct)showLoading('📌 恢复上次阅读位置…');
+    currentBook=ePub(file);
+    currentBook.opened.catch(e=>showError('EPUB 打开失败: '+e.message));
+    // 加载各章字数用于加权百分比
+    currentBook.ready.then(function(){
+      _chapterSizes=null;
+      _loadChapterSizes(currentBook);
+    });
+    _createRenditionAndDisplay(file.name,restoreTarget,savedPct);
+    document.title=file.name.replace(/\.epub$/i,'')+' — 阅读器';
+  }
+
+  // ---- TXT 加载 ----
+  function loadTxt(file){
+    destroyCurrent();currentFileName=file.name;
+    showLoading('正在读取…');startTimer();
+    const saved=getSavedProgress(file.name),savedScroll=(saved&&saved.scrollTop)||0;
+    if(savedScroll>0)showLoading('📌 恢复上次阅读位置…');
+
+    const r=new FileReader();
+    r.onload=function(e){
+      const lines=e.target.result.split(/\r?\n/);
+      const ps=[];let b=[];
+      lines.forEach(function(l){if(l.trim()===''){if(b.length){ps.push(b.join('\n'));b=[];}ps.push('');}else b.push(l);});
+      if(b.length)ps.push(b.join('\n'));
+      const html=ps.map(function(p){return p===''?'<br>':'<p>'+_esc(p)+'</p>';}).join('\n');
+      const viewer=$('viewer'),iframe=document.createElement('iframe');
+      iframe.id='txt-iframe';iframe.style.cssText='width:100%;height:100%;border:none;';
+      iframe.srcdoc='<!DOCTYPE html><html><head><meta charset="utf-8"><style>'+
+        'body{font-family:serif;padding:24px 32px;max-width:800px;margin:0 auto;line-height:'+currentLineSpacing+';font-size:'+(currentFontSize/100)+'em;color:#333;background:#faf9f6;}'+
+        '.dark body{color:#d4d4d4;background:#1a1a1a;}'+
+        'p{text-indent:2em;margin:0 0 '+currentParaSpacing+'em 0;}'+
+        '</style></head><body class="'+(currentTheme==='dark'?'dark':'')+'">'+html+'</body></html>';
+      viewer.appendChild(iframe);
+
+      function _saveTxt(){if(!currentFileName)return;try{const d=iframe.contentDocument,st=(d.documentElement||d.body).scrollTop||0;saveProgress(currentFileName,{type:'txt',scrollTop:st,pct:_calcPct()});}catch(e){}}
+      function _calcPct(){try{const d=iframe.contentDocument,st=(d.documentElement||d.body).scrollTop||0,sh=(d.documentElement||d.body).scrollHeight||1,ch=(d.documentElement||d.body).clientHeight||1;return sh>ch?Math.min(1,st/(sh-ch)):0;}catch(e){return 0;}}
+
+      rendition={
+        prev:function(){iframe.contentWindow.scrollBy(0,-iframe.clientHeight*0.85);updateProgress();},
+        next:function(){iframe.contentWindow.scrollBy(0,iframe.clientHeight*0.85);updateProgress();},
+        resize:function(){},destroy:function(){_saveTxt();iframe.remove();},
+        themes:{fontSize:function(sz){try{iframe.contentDocument.body.style.fontSize=sz;}catch(e){}},register:function(n,r){if(n==='spacing'&&r&&r.body){try{var b=iframe.contentDocument.body;if(r.body['line-height'])b.style.lineHeight=r.body['line-height'];var ps=b.querySelectorAll('p');if(r.p&&r.p['margin-bottom']){for(var i=0;i<ps.length;i++)ps[i].style.marginBottom=r.p['margin-bottom']+'';}}catch(e){}}},select:function(name){try{iframe.contentDocument.body.parentElement.className=name;}catch(e){}}},
+        currentLocation:function(){const p=_calcPct();return{start:{percentage:p,displayed:{page:0,total:0}}};},
+        on:function(){},
+      };
+      window.rendition=rendition;
+      iframe.addEventListener('load',function(){if(savedScroll>0)try{setTimeout(function(){(iframe.contentDocument.documentElement||iframe.contentDocument.body).scrollTop=savedScroll;},150);}catch(e){}updateProgress();
+        // TXT iframe 内的 Esc + 双击监听
+        try{iframe.contentDocument.addEventListener('keydown',function(e){if(e.key==='Escape')_onEsc();});_installDTap(iframe.contentDocument);}catch(e){}
+      });
+      setInterval(_saveTxt,5000);
+      document.addEventListener('visibilitychange',function(){if(document.hidden)_saveTxt();});
+      window.addEventListener('beforeunload',_saveTxt);
+      updateProgress();hideOverlay();stopTimer();
+      applyPrefsToBook();updateFlowUI();
+      if(isImmersive)enterImmersive();
+      document.title=file.name.replace(/\.txt$/i,'')+' — 阅读器';
+    };
+    r.onerror=function(){showError('文件读取失败');stopTimer();};
+    r.readAsText(file,'UTF-8');
+  }
+  function _esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+  // ---- 目录 ----
+  var _tocBuilt=false;
+  function buildToc(toc){if(_tocBuilt)return;_tocBuilt=true;const l=$('toc-list');l.innerHTML='';if(!toc||!toc.length){l.innerHTML='<li style="padding:16px;opacity:0.5;font-size:0.85rem;">无目录</li>';return;}_flatten(toc).forEach(function(it,i){const li=document.createElement('li'),a=document.createElement('a');a.textContent=it.label.trim()||'(无标题 '+(i+1)+')';a.href='#';a.title=it.label;a.addEventListener('click',function(e){e.preventDefault();rendition.display(it.href);if(innerWidth<700)toggleSidebar();});li.appendChild(a);l.appendChild(li);});}
+  function _flatten(toc){let r=[];toc.forEach(function(it){r.push(it);if(it.subitems&&it.subitems.length)r=r.concat(_flatten(it.subitems));});return r;}
+
+  // ---- 排版面板 ----
+  window.toggleTypoPanel=function(){
+    $('typo-panel').classList.toggle('show');
+  };
+  document.addEventListener('click',function(e){
+    if(!e.target.closest('#typo-panel')&&!e.target.closest('#typo-btn')){
+      $('typo-panel').classList.remove('show');
+    }
+  });
+
+  // ---- 自适应 ----
+  function resizeViewer(){if(!rendition)return;const s=getViewerSize();if(s.width>0&&s.height>0)rendition.resize(s.width,s.height);}
+  if(window.ResizeObserver){observer=new ResizeObserver(resizeViewer);observer.observe($('viewer-wrapper'));}
+  let rt;window.addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(resizeViewer,150);});
+
+  // ---- 翻页 ----
+  document.addEventListener('keyup',function(e){if(!rendition)return;if(e.key==='ArrowUp')rendition.prev();if(e.key==='ArrowDown')rendition.next();if(e.key==='ArrowLeft')rendition.prev();if(e.key==='ArrowRight')rendition.next();});
+  let tsX=0,tsY=0;
+  document.addEventListener('touchstart',function(e){tsX=e.touches[0].clientX;tsY=e.touches[0].clientY;});
+  document.addEventListener('touchend',function(e){
+    if(!rendition)return;
+    const dx=tsX-e.changedTouches[0].clientX,dy=tsY-e.changedTouches[0].clientY;
+    if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>50){if(dx>0)rendition.next();else rendition.prev();}
+    else if(Math.abs(dy)>Math.abs(dx)&&Math.abs(dy)>50){if(dy>0)rendition.next();else rendition.prev();}
+  });
+
+  // ---- 进度 ----
+  function updateProgress(loc){loc=loc||(rendition?rendition.currentLocation():null);if(!loc||!loc.start)return;var pct=Math.round(_calcPct(loc.start)*100);if(pct>0){$('progress-fill').style.width=pct+'%';$('page-info').textContent=pct+'%';}}
+
+  // ---- 侧边栏 ----
+  window.toggleSidebar=function(){$('sidebar').classList.toggle('hidden');setTimeout(resizeViewer,300);};
+
+  // ---- 文件句柄持久化（支持记住文件位置） ----
+  // File System Access API: 存储句柄到 IndexedDB，再次打开无需选择文件
+  const DB_NAME='ebook_handles', DB_VER=1;
+  let db=null;
+
+  function openHandleDB(){
+    return new Promise(function(resolve,reject){
+      if(db){resolve(db);return;}
+      const req=indexedDB.open(DB_NAME,DB_VER);
+      req.onupgradeneeded=function(e){e.target.result.createObjectStore('handles');};
+      req.onsuccess=function(e){db=e.target.result;resolve(db);};
+      req.onerror=function(e){reject(e);};
+    });
+  }
+
+  async function saveFileHandle(fileName,handle){
+    try{
+      const d=await openHandleDB();
+      const tx=d.transaction('handles','readwrite');
+      tx.objectStore('handles').put(handle,fileName);
+      return new Promise(r=>{tx.oncomplete=r;tx.onerror=r;});
+    }catch(e){}
+  }
+
+  async function getFileHandle(fileName){
+    try{
+      const d=await openHandleDB();
+      const tx=d.transaction('handles','readonly');
+      const req=tx.objectStore('handles').get(fileName);
+      return new Promise(function(resolve){
+        req.onsuccess=function(){resolve(req.result);};
+        req.onerror=function(){resolve(null);};
+      });
+    }catch(e){return null;}
+  }
+
+  // 尝试用保存的句柄重新打开文件（无需文件选择器）
+  async function reopenWithHandle(fileName){
+    try{
+      const handle=await getFileHandle(fileName);
+      if(!handle||typeof handle.requestPermission!=='function')return null;
+      // 请求用户授权（静默失败则返回 null）
+      const perm=await handle.requestPermission({mode:'read'});
+      if(perm!=='granted')return null;
+      return await handle.getFile();
+    }catch(e){return null;}
+  }
+
+  // 检查 File System Access API 是否可用
+  function hasFSA(){return typeof window.showOpenFilePicker==='function';}
+
+  // 用 File System Access API 打开文件
+  async function openFileWithFSA(){
+    try{
+      const [handle]=await window.showOpenFilePicker({
+        types:[{description:'电子书',accept:{'application/epub+zip':['.epub'],'text/plain':['.txt']}}],
+        multiple:false
+      });
+      const file=await handle.getFile();
+      await saveFileHandle(file.name,handle);
+      handleFile(file);
+      return true;
+    }catch(e){
+      return false; // 用户取消或 API 不可用
+    }
+  }
+
+  window.handleFile=function(file){if(!file)return;const n=file.name.toLowerCase();if(n.endsWith('.epub'))loadEpub(file);else if(n.endsWith('.txt'))loadTxt(file);else alert('暂不支持此格式！');$('file-input').value='';};
+
+  // ---- 文件选择入口 ----
+  window.openFile=async function(){
+    if(hasFSA()){
+      const ok=await openFileWithFSA();
+      if(!ok)$('file-input').click(); // 用户取消 FSA 选择器，回退到传统方式
+    }else{
+      $('file-input').click();
+    }
+  };
+  document.addEventListener('dragover',function(e){e.preventDefault();});
+  document.addEventListener('drop',function(e){e.preventDefault();const f=e.dataTransfer.files[0];if(f)handleFile(f);});
+
+  // ==================== 书架 ====================
+  function renderBookshelf(){var shelf=$('bookshelf');if(!shelf)return;var all=loadAllProgress();var seen={};var books=[];
+    // 先列内置书（始终显示，不需进度记录）
+    if(typeof EMBEDDED_BOOKS!=='undefined'){for(var i=0;i<EMBEDDED_BOOKS.length;i++){var n=EMBEDDED_BOOKS[i].name;if(!seen[n]){seen[n]=true;books.push({name:n,type:'epub',pct:(all[n]&&all[n].pct)||0,updatedAt:(all[n]&&all[n].updatedAt)||0,embedded:true});}}}
+    // 再列其他有进度记录的书
+    var keys=Object.keys(all).filter(function(k){return k!=='preferences'&&all[k].type;});
+    for(var j=0;j<keys.length;j++){if(!seen[keys[j]]){seen[keys[j]]=true;books.push({name:keys[j],type:all[keys[j]].type,pct:all[keys[j]].pct||0,updatedAt:all[keys[j]].updatedAt||0,embedded:false});}}
+    if(!books.length){shelf.innerHTML='';return;}
+    books.sort(function(a,b){return b.updatedAt-a.updatedAt;});
+    var ti={epub:'📕',txt:'📄'},tl={epub:'EPUB',txt:'TXT'};
+    shelf.innerHTML='<h2>📚 书架（'+books.length+' 本书）</h2>'+books.map(function(bk){var pct=Math.round(bk.pct*100),icon=ti[bk.type]||'📖',label=tl[bk.type]||bk.type,time=bk.updatedAt?_fmtTime(bk.updatedAt):'未读';return'<div class="book-card" onclick="pickAndOpen(\''+_ea(bk.name)+'\')" title="点击继续阅读"><span class="book-icon">'+icon+'</span><div class="book-info"><div class="book-name">'+_esc(bk.name)+(bk.embedded?' 🔖':'')+'</div><div class="book-meta">'+label+' · '+time+' · '+pct+'%</div><div class="book-progress-bar"><div class="book-progress-fill" style="width:'+pct+'%"></div></div></div></div>';}).join('');}
+  function _fmtTime(ts){const d=new Date(ts),n=new Date(),diff=n-d;if(diff<6e4)return'刚刚';if(diff<36e5)return Math.floor(diff/6e4)+'分钟前';if(diff<864e5)return Math.floor(diff/36e5)+'小时前';if(diff<6048e5)return Math.floor(diff/864e5)+'天前';return(d.getMonth()+1)+'/'+d.getDate();}
+  function _ea(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');}
+  window.pickAndOpen=async function(name){
+    // 1) 内置书：从相对路径 fetch 加载（不再内嵌 base64，手机端稳定、加载快）
+    var emb=findEmbedded(name);
+    if(emb){
+      showLoading('正在加载内置书…');startTimer();
+      try{
+        var resp=await fetch(emb.url);
+        if(!resp.ok)throw new Error('HTTP '+resp.status);
+        var blob=await resp.blob();
+        var f=new File([blob],emb.name,{type:'application/epub+zip'});
+        handleFile(f);
+        return;
+      }catch(e){console.log('内置书加载失败:',e);stopTimer();showError('内置书加载失败："'+emb.name+'"（'+e.message+'）。若为本地打开，请通过 start.bat 启动服务器后再试。');return;}
+    }
+    // 2) FSA 句柄（桌面 Chrome/Edge 记住的文件）
+    var reopened=await reopenWithHandle(name);
+    if(reopened){handleFile(reopened);return;}
+    // 3) 降级：需要重新选择文件
+    showToast('请重新选择 "'+name+'" 文件');
+    window._pendingRestore=name;$('file-input').click();
+  };
+  function findEmbedded(name){
+    if(typeof EMBEDDED_BOOKS==='undefined')return null;
+    for(var i=0;i<EMBEDDED_BOOKS.length;i++){if(EMBEDDED_BOOKS[i].name===name)return EMBEDDED_BOOKS[i];}
+    return null;
+  }
+  window.removeFromShelf=function(name){removeProgress(name);};
+  var _chapterSizes=null;
+  function _loadChapterSizes(book){
+    if(_chapterSizes)return;
+    _chapterSizes=[];
+    try{
+      var spine=book.spine.items;
+      for(var i=0;i<spine.length;i++){
+        try{
+          var arch=book.archive||book._archive;
+          var f=arch&&arch.file&&arch.file(spine[i].href);
+          if(f&&f.asText){_chapterSizes.push(f.asText().length);}
+          else{_chapterSizes.push(0);}
+        }catch(e){_chapterSizes.push(0);}
+      }
+    }catch(e){_chapterSizes=null;}
+  }
+  function _calcPct(start){
+    var pct=0;
+    if(_chapterSizes&&_chapterSizes.length>0&&typeof start.index==='number'){
+      var total=0,pos=0;
+      for(var i=0;i<_chapterSizes.length;i++){total+=_chapterSizes[i];if(i<start.index)pos+=_chapterSizes[i];}
+      if(typeof start.location==='number')pos+=Math.min(start.location,_chapterSizes[start.index]||0);
+      if(total>0)pct=pos/total;
+    }
+    if(pct<=0){var t=currentBook&&currentBook.spine?currentBook.spine.items.length:0;if(t>0&&typeof start.index==='number')pct=(start.index+1)/t;else pct=start.percentage||0;}
+    return pct;
+  }
+  function _forceSave(){
+    if(!currentFileName||!rendition)return;
+    var l=rendition.currentLocation();
+    if(l&&l.start)saveProgress(currentFileName,{type:'epub',href:l.start.href||'',cfi:l.start.cfi||'',pct:_calcPct(l.start)});
+  }
+  window.backToShelf=function(){exitImmersive();_forceSave();destroyCurrent();document.title='电子书阅读器';showWelcome();renderBookshelf();};
+
+  // 内置书：只存元数据 + 相对路径，点书时才 fetch 加载（线上/本地离线均可用）
+  const EMBEDDED_BOOKS=[
+    {name:"Night Angel Nemesis (Brent Weeks).epub",type:"epub",url:"books/night-angel-nemesis.epub"},
+    {name:"Night Angel Trilogy Box Set (Brent Weeks).epub",type:"epub",url:"books/night-angel-trilogy.epub"}
+  ];
+
+  // ---- 初始化 ----
+  loadPrefs();
+  renderBookshelf();
+  updateFlowUI();
+})();
+</script>
+</body>
+</html>

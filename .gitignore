@@ -1,0 +1,4 @@
+# 仅忽略根目录的源 epub（体积大、命名乱），books/ 下的干净副本要进仓库
+/*.epub
+book.epub
+reader-standalone.html
