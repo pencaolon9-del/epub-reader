@@ -762,19 +762,7 @@
   window.backToShelf=function(){exitImmersive();_forceSave();destroyCurrent();document.title='电子书阅读器';showWelcome();renderBookshelf();};
 
   // 内置书：只存元数据 + 相对路径，点书时才 fetch 加载（线上/本地离线均可用）
-  const EMBEDDED_BOOKS=[
-    {name:"Codex Alera - Complete Series 1-6 (Jim Butcher).epub",type:"epub",url:"epubå°è¯´åé/Codex Alera - Complete Series 1-6 (Jim Butcher).epub"},
-    {name:"Farseer 01-03 - Trilogy (Robin Hobb).epub",type:"epub",url:"epubå°è¯´åé/Farseer 01-03 - Trilogy (Robin Hobb).epub"},
-    {name:"Kushiel's Legacy 01 - Kushiel's Dart (Jacqueline Carey).epub",type:"epub",url:"epubå°è¯´åé/Kushiel's Legacy 01 - Kushiel's Dart (Jacqueline Carey).epub"},
-    {name:"Lightbringer - Complete Series 1-5 (Brent Weeks).epub",type:"epub",url:"epubå°è¯´åé/Lightbringer - Complete Series 1-5 (Brent Weeks).epub"},
-    {name:"Memory, Sorrow, and Thorn - Complete Trilogy (Tad Williams).epub",type:"epub",url:"epubå°è¯´åé/Memory, Sorrow, and Thorn - Complete Trilogy (Tad Williams).epub"},
-    {name:"Mistborn 01-03 - Complete Trilogy (Brandon Sanderson).epub",type:"epub",url:"epubå°è¯´åé/Mistborn 01-03 - Complete Trilogy (Brandon Sanderson).epub"},
-    {name:"Night Angel 01-03 - Trilogy (Brent Weeks).epub",type:"epub",url:"epubå°è¯´åé/Night Angel 01-03 - Trilogy (Brent Weeks).epub"},
-    {name:"Night Angel 04 - Nemesis (Brent Weeks).epub",type:"epub",url:"epubå°è¯´åé/Night Angel 04 - Nemesis (Brent Weeks).epub"},
-    {name:"Powder Mage 01-03 - Trilogy (Brian McClellan).epub",type:"epub",url:"epubå°è¯´åé/Powder Mage 01-03 - Trilogy (Brian McClellan).epub"},
-    {name:"The Wheel of Time - Complete 01-14 (Robert Jordan & Brandon Sanderson).epub",type:"epub",url:"epubå°è¯´åé/The Wheel of Time - Complete 01-14 (Robert Jordan & Brandon Sanderson).epub"},
-    {name:"Tigana (Guy Gavriel Kay).epub",type:"epub",url:"epubå°è¯´åé/Tigana (Guy Gavriel Kay).epub"}
-  ];
+  const EMBEDDED_BOOKS=[]
 
   // ---- 初始化 ----
   loadPrefs();
