@@ -1,4 +1,5 @@
-# 仅忽略根目录的源 epub（体积大、命名乱），books/ 下的干净副本要进仓库
+# EPUB 文件不提交（体积大、版权问题）
 /*.epub
 book.epub
+epub小说合集/*.epub
 reader-standalone.html
