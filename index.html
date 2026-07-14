@@ -669,13 +669,8 @@
   window.handleFile=function(file){if(!file)return;const n=file.name.toLowerCase();if(n.endsWith('.epub'))loadEpub(file);else if(n.endsWith('.txt'))loadTxt(file);else alert('暂不支持此格式！');$('file-input').value='';};
 
   // ---- 文件选择入口 ----
-  window.openFile=async function(){
-    if(hasFSA()){
-      const ok=await openFileWithFSA();
-      if(!ok)$('file-input').click(); // 用户取消 FSA 选择器，回退到传统方式
-    }else{
-      $('file-input').click();
-    }
+  window.openFile=function(){
+    $('file-input').click();
   };
   document.addEventListener('dragover',function(e){e.preventDefault();});
   document.addEventListener('drop',function(e){e.preventDefault();const f=e.dataTransfer.files[0];if(f)handleFile(f);});
