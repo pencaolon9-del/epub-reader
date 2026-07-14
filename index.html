@@ -456,7 +456,7 @@
       }catch(e){/* fallback to parent listener */}
     },500);
     // 目录
-    currentBook.loaded.navigation.then(t=>buildToc(t)).catch(()=>{});
+    currentBook.loaded.navigation.then(t=>{console.log("TOC loaded:",t?t.length:0);buildToc(t);}).catch(e=>{console.error("TOC error:",e);});
 
     // 进度保存
     rendition.on('relocated',function(loc){
@@ -500,7 +500,7 @@
     var savedPct=(saved&&saved.pct)?saved.pct:null;
     if(restoreTarget||savedPct)showLoading('📌 恢复上次阅读位置…');
     currentBook=ePub(file);
-    currentBook.opened.catch(e=>showError('EPUB 打开失败: '+e.message));
+    currentBook.opened.catch(e=>{console.error('EPUB opened error:',e);showError('EPUB 打开失败: '+e.message);});
     // 加载各章字数用于加权百分比
     currentBook.ready.then(function(){
       _chapterSizes=null;
