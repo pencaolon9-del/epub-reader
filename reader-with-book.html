@@ -235,7 +235,7 @@
   </div>
 </div>
 
-<input type="file" id="file-input" accept=".epub,.txt" style="position:absolute;width:0;height:0;overflow:hidden;opacity:0" onchange="handleFile(this.files[0])">
+<input type="file" id="file-input" accept=".epub,.txt" style="display:none" onchange="handleFile(this.files[0])">
 
 <script>
 (function(){
@@ -669,44 +669,33 @@
   window.handleFile=function(file){if(!file)return;const n=file.name.toLowerCase();if(n.endsWith('.epub'))loadEpub(file);else if(n.endsWith('.txt'))loadTxt(file);else alert('暂不支持此格式！');$('file-input').value='';};
 
   // ---- 文件选择入口 ----
-  window.openFile=function(){
-    $('file-input').click();
+  window.openFile=async function(){
+    if(hasFSA()){
+      const ok=await openFileWithFSA();
+      if(!ok)$('file-input').click(); // 用户取消 FSA 选择器，回退到传统方式
+    }else{
+      $('file-input').click();
+    }
   };
   document.addEventListener('dragover',function(e){e.preventDefault();});
   document.addEventListener('drop',function(e){e.preventDefault();const f=e.dataTransfer.files[0];if(f)handleFile(f);});
 
   // ==================== 书架 ====================
-  
-  // 扫描 epub小说合集/books.json 自动发现新书
-  var _bookshelfBooks=null;
-  window.scanBookshelf=async function(){
-    showToast('正在扫描书库...');
-    try{
-      var resp=await fetch('epub小说合集/books.json');
-      if(resp.ok){_bookshelfBooks=await resp.json();showToast('发现 '+_bookshelfBooks.length+' 本书');}
-      else{_bookshelfBooks=null;showToast('未找到 books.json');}
-    }catch(e){_bookshelfBooks=null;showToast('扫描失败，使用内置书单');}
-    renderBookshelf();
-  };
-
   function renderBookshelf(){var shelf=$('bookshelf');if(!shelf)return;var all=loadAllProgress();var seen={};var books=[];
     // 先列内置书（始终显示，不需进度记录）
     if(typeof EMBEDDED_BOOKS!=='undefined'){for(var i=0;i<EMBEDDED_BOOKS.length;i++){var n=EMBEDDED_BOOKS[i].name;if(!seen[n]){seen[n]=true;books.push({name:n,type:'epub',pct:(all[n]&&all[n].pct)||0,updatedAt:(all[n]&&all[n].updatedAt)||0,embedded:true});}}}
-        // 再列 books.json 动态书单
-    if(_bookshelfBooks&&_bookshelfBooks.length){for(var i=0;i<_bookshelfBooks.length;i++){var n=_bookshelfBooks[i].name;if(!seen[n]){seen[n]=true;books.push({name:n,type:'epub',pct:(all[n]&&all[n].pct)||0,updatedAt:(all[n]&&all[n].updatedAt)||0,embedded:false,url:_bookshelfBooks[i].url});}}}
     // 再列其他有进度记录的书
     var keys=Object.keys(all).filter(function(k){return k!=='preferences'&&all[k].type;});
     for(var j=0;j<keys.length;j++){if(!seen[keys[j]]){seen[keys[j]]=true;books.push({name:keys[j],type:all[keys[j]].type,pct:all[keys[j]].pct||0,updatedAt:all[keys[j]].updatedAt||0,embedded:false});}}
     if(!books.length){shelf.innerHTML='';return;}
     books.sort(function(a,b){return b.updatedAt-a.updatedAt;});
     var ti={epub:'📕',txt:'📄'},tl={epub:'EPUB',txt:'TXT'};
-    shelf.innerHTML='<h2>📚 书架（'+books.length+' 本书）<button onclick="event.stopPropagation();scanBookshelf()" style="float:right;background:var(--accent);color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.78rem;" title="扫描 epub小说合集 自动发现新书">🔄 刷新</button></h2>'+books.map(function(bk){var pct=Math.round(bk.pct*100),icon=ti[bk.type]||'📖',label=tl[bk.type]||bk.type,time=bk.updatedAt?_fmtTime(bk.updatedAt):'未读';return'<div class="book-card" onclick="pickAndOpen(\''+_ea(bk.name)+'\')" title="点击继续阅读"><span class="book-icon">'+icon+'</span><div class="book-info"><div class="book-name">'+_esc(bk.name)+(bk.embedded?' 🔖':'')+'</div><div class="book-meta">'+label+' · '+time+' · '+pct+'%</div><div class="book-progress-bar"><div class="book-progress-fill" style="width:'+pct+'%"></div></div></div><button class="book-del" onclick="event.stopPropagation();removeFromShelf('"+_ea(bk.name)+"');" title="从书架删除">✕</button></div>';}).join('');}
+    shelf.innerHTML='<h2>📚 书架（'+books.length+' 本书）</h2>'+books.map(function(bk){var pct=Math.round(bk.pct*100),icon=ti[bk.type]||'📖',label=tl[bk.type]||bk.type,time=bk.updatedAt?_fmtTime(bk.updatedAt):'未读';return'<div class="book-card" onclick="pickAndOpen(\''+_ea(bk.name)+'\')" title="点击继续阅读"><span class="book-icon">'+icon+'</span><div class="book-info"><div class="book-name">'+_esc(bk.name)+(bk.embedded?' 🔖':'')+'</div><div class="book-meta">'+label+' · '+time+' · '+pct+'%</div><div class="book-progress-bar"><div class="book-progress-fill" style="width:'+pct+'%"></div></div></div></div>';}).join('');}
   function _fmtTime(ts){const d=new Date(ts),n=new Date(),diff=n-d;if(diff<6e4)return'刚刚';if(diff<36e5)return Math.floor(diff/6e4)+'分钟前';if(diff<864e5)return Math.floor(diff/36e5)+'小时前';if(diff<6048e5)return Math.floor(diff/864e5)+'天前';return(d.getMonth()+1)+'/'+d.getDate();}
   function _ea(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');}
   window.pickAndOpen=async function(name){
     // 1) 内置书：从相对路径 fetch 加载（不再内嵌 base64，手机端稳定、加载快）
     var emb=findEmbedded(name);
-    if(!emb&&_bookshelfBooks){for(var i=0;i<_bookshelfBooks.length;i++){if(_bookshelfBooks[i].name===name){emb={name:name,url:_bookshelfBooks[i].url};break;}}}
     if(emb){
       showLoading('正在加载内置书…');startTimer();
       try{
@@ -730,7 +719,7 @@
     for(var i=0;i<EMBEDDED_BOOKS.length;i++){if(EMBEDDED_BOOKS[i].name===name)return EMBEDDED_BOOKS[i];}
     return null;
   }
-  window.removeFromShelf=function(name){removeProgress(name);renderBookshelf();};
+  window.removeFromShelf=function(name){removeProgress(name);};
   var _chapterSizes=null;
   function _loadChapterSizes(book){
     if(_chapterSizes)return;
@@ -767,17 +756,17 @@
 
   // 内置书：只存元数据 + 相对路径，点书时才 fetch 加载（线上/本地离线均可用）
   const EMBEDDED_BOOKS=[
-    {name:"Codex Alera - Complete Series 1-6 (Jim Butcher).epub",type:"epub",url:"epub小说合集/Codex Alera - Complete Series 1-6 (Jim Butcher).epub"},
-    {name:"Farseer 01-03 - Trilogy (Robin Hobb).epub",type:"epub",url:"epub小说合集/Farseer 01-03 - Trilogy (Robin Hobb).epub"},
-    {name:"Kushiel's Legacy 01 - Kushiel's Dart (Jacqueline Carey).epub",type:"epub",url:"epub小说合集/Kushiel's Legacy 01 - Kushiel's Dart (Jacqueline Carey).epub"},
-    {name:"Lightbringer - Complete Series 1-5 (Brent Weeks).epub",type:"epub",url:"epub小说合集/Lightbringer - Complete Series 1-5 (Brent Weeks).epub"},
-    {name:"Memory, Sorrow, and Thorn - Complete Trilogy (Tad Williams).epub",type:"epub",url:"epub小说合集/Memory, Sorrow, and Thorn - Complete Trilogy (Tad Williams).epub"},
-    {name:"Mistborn 01-03 - Complete Trilogy (Brandon Sanderson).epub",type:"epub",url:"epub小说合集/Mistborn 01-03 - Complete Trilogy (Brandon Sanderson).epub"},
-    {name:"Night Angel 01-03 - Trilogy (Brent Weeks).epub",type:"epub",url:"epub小说合集/Night Angel 01-03 - Trilogy (Brent Weeks).epub"},
-    {name:"Night Angel 04 - Nemesis (Brent Weeks).epub",type:"epub",url:"epub小说合集/Night Angel 04 - Nemesis (Brent Weeks).epub"},
-    {name:"Powder Mage 01-03 - Trilogy (Brian McClellan).epub",type:"epub",url:"epub小说合集/Powder Mage 01-03 - Trilogy (Brian McClellan).epub"},
-    {name:"The Wheel of Time - Complete 01-14 (Robert Jordan & Brandon Sanderson).epub",type:"epub",url:"epub小说合集/The Wheel of Time - Complete 01-14 (Robert Jordan & Brandon Sanderson).epub"},
-    {name:"Tigana (Guy Gavriel Kay).epub",type:"epub",url:"epub小说合集/Tigana (Guy Gavriel Kay).epub"}
+    {name:"Codex Alera - Complete Series 1-6 (Jim Butcher).epub",type:"epub",url:"epubå°è¯´åé/Codex Alera - Complete Series 1-6 (Jim Butcher).epub"},
+    {name:"Farseer 01-03 - Trilogy (Robin Hobb).epub",type:"epub",url:"epubå°è¯´åé/Farseer 01-03 - Trilogy (Robin Hobb).epub"},
+    {name:"Kushiel's Legacy 01 - Kushiel's Dart (Jacqueline Carey).epub",type:"epub",url:"epubå°è¯´åé/Kushiel's Legacy 01 - Kushiel's Dart (Jacqueline Carey).epub"},
+    {name:"Lightbringer - Complete Series 1-5 (Brent Weeks).epub",type:"epub",url:"epubå°è¯´åé/Lightbringer - Complete Series 1-5 (Brent Weeks).epub"},
+    {name:"Memory, Sorrow, and Thorn - Complete Trilogy (Tad Williams).epub",type:"epub",url:"epubå°è¯´åé/Memory, Sorrow, and Thorn - Complete Trilogy (Tad Williams).epub"},
+    {name:"Mistborn 01-03 - Complete Trilogy (Brandon Sanderson).epub",type:"epub",url:"epubå°è¯´åé/Mistborn 01-03 - Complete Trilogy (Brandon Sanderson).epub"},
+    {name:"Night Angel 01-03 - Trilogy (Brent Weeks).epub",type:"epub",url:"epubå°è¯´åé/Night Angel 01-03 - Trilogy (Brent Weeks).epub"},
+    {name:"Night Angel 04 - Nemesis (Brent Weeks).epub",type:"epub",url:"epubå°è¯´åé/Night Angel 04 - Nemesis (Brent Weeks).epub"},
+    {name:"Powder Mage 01-03 - Trilogy (Brian McClellan).epub",type:"epub",url:"epubå°è¯´åé/Powder Mage 01-03 - Trilogy (Brian McClellan).epub"},
+    {name:"The Wheel of Time - Complete 01-14 (Robert Jordan & Brandon Sanderson).epub",type:"epub",url:"epubå°è¯´åé/The Wheel of Time - Complete 01-14 (Robert Jordan & Brandon Sanderson).epub"},
+    {name:"Tigana (Guy Gavriel Kay).epub",type:"epub",url:"epubå°è¯´åé/Tigana (Guy Gavriel Kay).epub"}
   ];
 
   // ---- 初始化 ----
