@@ -564,9 +564,8 @@
 
   // ---- 目录 ----
   var _tocBuilt=false;
-  function buildToc(toc){if(_tocBuilt)return;_tocBuilt=true;const l=$('toc-list');l.innerHTML='';if(!toc||!toc.length){l.innerHTML='<li style="padding:16px;opacity:0.5;font-size:0.85rem;">无目录</li>';return;}_flatten(toc).forEach(function(it,i){const li=document.createElement('li'),a=document.createElement('a');a.textContent=it.label.trim()||'(无标题 '+(i+1)+')';a.href='#';a.title=it.label;a.addEventListener('click',function(e){e.preventDefault();rendition.display(it.href);if(innerWidth<700)toggleSidebar();});li.appendChild(a);l.appendChild(li);});}
-  function _flatten(toc){let r=[];toc.forEach(function(it){r.push(it);if(it.subitems&&it.subitems.length)r=r.concat(_flatten(it.subitems));});return r;}
-
+  function buildToc(toc){if(_tocBuilt)return;_tocBuilt=true;const l=;l.innerHTML='';if(!toc||!toc.length){l.innerHTML='<li style="padding:16px;opacity:0.5;font-size:0.85rem;">无目录</li>';return;}try{var items=_flatten(toc,0);if(items.length>500)items=items.slice(0,500);items.forEach(function(it,i){var li=document.createElement('li'),a=document.createElement('a');a.textContent=it.label.trim()||'(无标题 '+(i+1)+')';a.href='#';a.title=it.label;a.addEventListener('click',function(e){e.preventDefault();if(rendition)rendition.display(it.href);if(innerWidth<700)toggleSidebar();});li.appendChild(a);l.appendChild(li);});}catch(e){l.innerHTML='<li style="padding:16px;opacity:0.5;font-size:0.85rem;">目录加载失败</li>';}}
+	  function _flatten(toc,depth){if(depth>10)return[];var r=[];toc.forEach(function(it){r.push(it);if(it.subitems&&it.subitems.length)r=r.concat(_flatten(it.subitems,depth+1));});return r;}
   // ---- 排版面板 ----
   window.toggleTypoPanel=function(){
     $('typo-panel').classList.toggle('show');
@@ -597,7 +596,7 @@
   function updateProgress(loc){loc=loc||(rendition?rendition.currentLocation():null);if(!loc||!loc.start)return;var pct=Math.round(_calcPct(loc.start)*100);if(pct>0){$('progress-fill').style.width=pct+'%';$('page-info').textContent=pct+'%';}}
 
   // ---- 侧边栏 ----
-  window.toggleSidebar=function(){$('sidebar').classList.toggle('hidden');setTimeout(resizeViewer,300);};
+  window.toggleSidebar=function(){$('sidebar').classList.toggle('hidden');};
 
   // ---- 文件句柄持久化（支持记住文件位置） ----
   // File System Access API: 存储句柄到 IndexedDB，再次打开无需选择文件
