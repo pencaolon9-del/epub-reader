@@ -578,7 +578,7 @@
   });
 
   // ---- 自适应 ----
-  function resizeViewer(){if(!rendition)return;const s=getViewerSize();if(s.width>0&&s.height>0)rendition.resize(s.width,s.height);}
+  function resizeViewer(){if(!rendition||!rendition.resize)return;const s=getViewerSize();if(s.width>0&&s.height>0)rendition.resize(s.width,s.height);}
   if(window.ResizeObserver){observer=new ResizeObserver(resizeViewer);observer.observe($('viewer-wrapper'));}
   let rt;window.addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(resizeViewer,150);});
 
