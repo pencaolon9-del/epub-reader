@@ -690,7 +690,14 @@
     if(!books.length){shelf.innerHTML='';return;}
     books.sort(function(a,b){return b.updatedAt-a.updatedAt;});
     var ti={epub:'📕',txt:'📄'},tl={epub:'EPUB',txt:'TXT'};
-    shelf.innerHTML='<h2>📚 书架（'+books.length+' 本书）</h2>'+books.map(function(bk){var pct=Math.round(bk.pct*100),icon=ti[bk.type]||'📖',label=tl[bk.type]||bk.type,time=bk.updatedAt?_fmtTime(bk.updatedAt):'未读';return'<div class="book-card" onclick="pickAndOpen(\''+_ea(bk.name)+'\')" title="点击继续阅读"><span class="book-icon">'+icon+'</span><div class="book-info"><div class="book-name">'+_esc(bk.name)+(bk.embedded?' 🔖':'')+'</div><div class="book-meta">'+label+' · '+time+' · '+pct+'%</div><div class="book-progress-bar"><div class="book-progress-fill" style="width:'+pct+'%"></div></div></div></div>';}).join('');}
+    shelf.innerHTML='<h2>📚 书架（'+books.length+' 本书）</h2>'+books.map(function(bk){var pct=Math.round(bk.pct*100),icon=ti[bk.type]||'📖',label=tl[bk.type]||bk.type,time=bk.updatedAt?_fmtTime(bk.updatedAt):'未读';return'<div class="book-card" onclick="pickAndOpen(\''+_ea(bk.name)+'\')" title="点击继续阅读"><span class="book-icon">'+icon+'</span><div class="book-info"><div class="book-name">'+_esc(bk.name)+(bk.embedded?' 🔖':'')+'</div><div class="book-meta">'+label+' · '+time+' · '+pct+'%</div><div class="book-progress-bar"><div class="book-progress-fill" style="width:'+pct+'%"></div></div></div></div>';}).join('');
+    // 用 DOM 追加删除按钮（不动模板，防语法错）
+    var cards=shelf.querySelectorAll('.book-card');
+    for(var i=0;i<cards.length;i++){(function(bk){
+      var btn=document.createElement('button');btn.className='book-del';btn.textContent='✕';
+      btn.title='从书架删除';btn.onclick=function(e){e.stopPropagation();removeProgress(bk.name);renderBookshelf();};
+      cards[i].appendChild(btn);
+    })(books[i]);}}
   function _fmtTime(ts){const d=new Date(ts),n=new Date(),diff=n-d;if(diff<6e4)return'刚刚';if(diff<36e5)return Math.floor(diff/6e4)+'分钟前';if(diff<864e5)return Math.floor(diff/36e5)+'小时前';if(diff<6048e5)return Math.floor(diff/864e5)+'天前';return(d.getMonth()+1)+'/'+d.getDate();}
   function _ea(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');}
   window.pickAndOpen=async function(name){
